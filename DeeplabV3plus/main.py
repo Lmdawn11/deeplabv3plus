@@ -8,7 +8,7 @@ import random
 import argparse
 import numpy as np
 import torch.nn.functional as F
-
+a=1
 from DeeplabV3plus.loader.loader_casia import getDataPath, Dataset
 # from datasets import VOCSegmentation, Cityscapes
 # from utils import ext_transforms as et

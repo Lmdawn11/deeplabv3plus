@@ -26,6 +26,40 @@ class DeepLabV3(_SimpleSegmentationModel):
     pass
 
 
+class DualStreamModel(nn.Module):
+    def __init__(self, backbone, extractor_noise_srm_bayer, return_layers):
+        super(DualStreamModel, self).__init__()
+
+        self.backbone = backbone
+        self.extractor = extractor_noise_srm_bayer
+
+    def forward(self, x):
+        backbone_output = self.backbone(x)
+        extractor_output = self.extractor(x)
+        dc = {}
+
+        # 输出 backbone_output 的键
+        # print("Keys of backbone_output:")
+        # for key in backbone_output.keys():
+        #     print(key)
+        #     print(backbone_output[key].shape)
+        #
+        # # 输出 extractor_output 的键
+        # print("\nKeys of extractor_output:")
+        # for key in extractor_output.keys():
+        #     print(key)
+        #     print(extractor_output[key].shape)
+
+        # 在dim=1的维度上拼接两个模型的输出结果
+        combined_output = {}
+        combined_output['low_level'] = backbone_output['low_level']
+        extractor_out_interp = F.interpolate(extractor_output['out'], size=(16, 16), mode='bilinear',
+                                             align_corners=False)
+        combined_output['out'] = torch.cat([backbone_output['out'], extractor_out_interp], dim=1)
+
+        return combined_output
+
+
 class MASPP(nn.Module):
     def __init__(self, in_channels, aspp_dilate=[12, 24, 36]):
         super(MASPP, self).__init__()
@@ -60,7 +94,7 @@ class DeepLabHeadV3Plus(nn.Module):
             nn.ReLU(inplace=True),
         )
 
-        self.maspp = MASPP(in_channels, aspp_dilate)
+        self.maspp = MASPP(in_channels * 2, aspp_dilate)
         self.dattion = DANetHead(256, 256, nn.BatchNorm2d)
         self.classifier = nn.Sequential(
             nn.Conv2d(304, 256, 3, padding=1, bias=False),
@@ -68,15 +102,23 @@ class DeepLabHeadV3Plus(nn.Module):
             nn.ReLU(inplace=True),
             nn.Conv2d(256, num_classes, 1)
         )
+        self.cat = nn.Sequential(
+            nn.Conv2d(512, 256, 3, padding=1, bias=False),
+            nn.BatchNorm2d(256),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(256, 256, 1)
+        )
         self._init_weight()
 
     def forward(self, feature):
         low_level_feature = self.project(feature['low_level'])
-        output_feature = self.maspp(feature['out'])
-        output_feature = self.dattion(output_feature)
-        output_feature = F.interpolate(output_feature, size=low_level_feature.shape[2:], mode='bilinear',
+        out = self.maspp(feature['out'])
+        out_da = self.dattion(out)
+        out = torch.cat([out, out_da], dim=1)
+        out = self.cat(out)
+        out = F.interpolate(out, size=low_level_feature.shape[2:], mode='bilinear',
                                        align_corners=False)
-        return self.classifier(torch.cat([low_level_feature, output_feature], dim=1))
+        return self.classifier(torch.cat([low_level_feature, out], dim=1))
 
     def _init_weight(self):
         for m in self.modules():

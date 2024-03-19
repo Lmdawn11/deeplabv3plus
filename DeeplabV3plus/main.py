@@ -8,7 +8,7 @@ import random
 import argparse
 import numpy as np
 import torch.nn.functional as F
-a=1
+
 from DeeplabV3plus.loader.loader_casia import getDataPath, Dataset
 # from datasets import VOCSegmentation, Cityscapes
 # from utils import ext_transforms as et
@@ -40,7 +40,7 @@ def get_argparser():
                               not (name.startswith("__") or name.startswith('_')) and callable(
         network.modeling.__dict__[name])
                               )
-    parser.add_argument("--model", type=str, default='deeplabv3plus_resnet101',
+    parser.add_argument("--model", type=str, default='deeplabv3plus_resnet50',
                         choices=available_models, help='model name')
     parser.add_argument("--separable_conv", action='store_true', default=False,
                         help="apply separable conv to decoder and aspp")
@@ -65,15 +65,15 @@ def get_argparser():
                         help='batch size for validation (default: 4)')
     parser.add_argument("--crop_size", type=int, default=513)
 
-    # parser.add_argument("--ckpt", default='./checkpoints/latest_deeplabv3plus_resnet50_voc_os16.pth', type=str,
+    # parser.add_argument("--ckpt", default='/root/autodl-tmp/DeeplabV3plus/checkpoints/latest_deeplabv3plus_resnet50_voc_os16.pth', type=str,
     #                     help="restore from checkpoint")
-    parser.add_argument("--ckpt", default='./checkpoints/bestest_deeplabv3plus_resnet101_voc_os16.pth', type=str,
+    # parser.add_argument("--ckpt", default='./checkpoints/bestest_deeplabv3plus_resnet101_voc_os16.pth', type=str,
+    #                     help="restore from checkpoint")
+    parser.add_argument("--ckpt", default='./checkpoints/best_deeplabv3plus_resnet50_voc_os16.pth', type=str,
                         help="restore from checkpoint")
-    # parser.add_argument("--ckpt", default='./checkpoints/best_deeplabv3plus_resnet50_voc_os16.pth', type=str,
-    #                     help="restore from checkpoint")
     # parser.add_argument("--ckpt", default=None, type=str,
     #                     help="resume from checkpoint")
-    parser.add_argument("--continue_training", action='store_true', default=False)
+    parser.add_argument("--continue_training", action='store_true', default=True)
 
     parser.add_argument("--loss_type", type=str, default='cross_entropy',
                         choices=['cross_entropy', 'focal_loss'], help="loss type (default: False)")
@@ -180,10 +180,6 @@ def validate(opts, model, loader, device, metrics, ret_samples_ids=None):
 
 def main():
     opts = get_argparser().parse_args()
-    # if opts.dataset.lower() == 'voc':
-    #     opts.num_classes = 21
-    # elif opts.dataset.lower() == 'cityscapes':
-    #     opts.num_classes = 19
     opts.num_classes = 2
 
     # Setup visualization
@@ -200,19 +196,6 @@ def main():
     torch.manual_seed(opts.random_seed)
     np.random.seed(opts.random_seed)
     random.seed(opts.random_seed)
-
-    # Setup dataloader
-    # if opts.dataset == 'voc' and not opts.crop_val:
-    #     opts.val_batch_size = 1
-    #
-    # train_dst, val_dst = get_dataset(opts)
-    # train_loader = data.DataLoader(
-    #     train_dst, batch_size=opts.batch_size, shuffle=True, num_workers=2,
-    #     drop_last=True)  # drop_last=True to ignore single-image batches.
-    # val_loader = data.DataLoader(
-    #     val_dst, batch_size=opts.val_batch_size, shuffle=True, num_workers=2)
-    # print("Dataset: %s, Train set: %d, Val set: %d" %
-    #       (opts.dataset, len(train_dst), len(val_dst)))
 
     # new dataloader
     # 加载数据
@@ -256,6 +239,7 @@ def main():
         criterion = utils.FocalLoss(ignore_index=255, size_average=True)
     elif opts.loss_type == 'cross_entropy':
         criterion = nn.CrossEntropyLoss(ignore_index=255, reduction='mean')
+
 
     def save_ckpt(path):
         """ save current model
@@ -315,6 +299,7 @@ def main():
         return
 
     interval_loss = 0
+
     while True:  # cur_itrs < opts.total_itrs:
         # =====  Train  =====
         model.train()
@@ -356,8 +341,9 @@ def main():
                 #     best_score = val_score['Mean IoU']
                 #     save_ckpt('checkpoints/best_%s_%s_os%d.pth' %
                 #               (opts.model, opts.dataset, opts.output_stride))
+                print(f"best auc:{best_auc}")
                 if val_score['Mean AUC'] > best_auc:  # save best model
-                    best_score = val_score['Mean AUC']
+                    best_auc = val_score['Mean AUC']
                     save_ckpt('checkpoints/best_%s_%s_os%d.pth' %
                               (opts.model, opts.dataset, opts.output_stride))
 
